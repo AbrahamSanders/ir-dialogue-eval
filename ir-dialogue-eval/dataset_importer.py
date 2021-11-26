@@ -55,23 +55,23 @@ class DatasetImporter(object):
                 
                 #construct utterance documents
                 for k in range(dialog_length):
-                    context_embedding = None if k == 0 else np.mean(dialog_embeddings[:k], axis=0).tolist()
-                    utterance_embedding = dialog_embeddings[k].tolist()
-                    
+                    source = {
+                        "utterance_embedding": dialog_embeddings[k].tolist(),
+                        "utterance": dialog[k][1],
+                        "speaker": dialog[k][0],
+                        "seq_num": k+1,
+                        "domains": batch_domains[j],
+                        "source_dataset": dataset_name,
+                        "source_dialog_id": batch_ids[j]
+                    }
+                    if k > 0:
+                        source["context_embedding"] = np.mean(dialog_embeddings[:k], axis=0).tolist()
+                        
                     action = {
                         "_op_type": "index",
                         "_id": "%s_%s_%s" % (dataset_name, batch_ids[j], k+1),
-                        "doc": {
-                            "context_embedding": context_embedding,
-                            "utterance_embedding": utterance_embedding,
-                            "utterance": dialog[k][1],
-                            "speaker": dialog[k][0],
-                            "seq_num": k+1,
-                            "domains": batch_domains[j],
-                            "source_dataset": dataset_name,
-                            "source_dialog_id": batch_ids[j]
-                        }
-                    }
+                        "_source": source
+                    } 
                     es_docs.append(action)
                     
             bulk(self.es, es_docs, index=self.es_index_name, chunk_size=self.es_chunk_size)

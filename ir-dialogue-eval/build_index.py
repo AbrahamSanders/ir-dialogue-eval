@@ -2,6 +2,7 @@ import logging
 import argparse
 import sys
 from glob import glob
+from os import path
 
 from dataset_loaders.dataset_loader_factory import get_dataset_loader
 from dataset_importer import DatasetImporter
@@ -40,7 +41,12 @@ importer = DatasetImporter(args.elasticsearch_uri, args.elasticsearch_index,
                            embedding_model=args.embedding_model)
 
 #Import all datasets
-datasets = glob("datasets/*")
+datasets_path = "datasets"
+if not path.isdir(datasets_path):
+    datasets_path = path.join("..", datasets_path)
+glob_path = path.join(datasets_path, "*")
+
+datasets = glob(glob_path)
 for dataset in datasets:
     loader = get_dataset_loader(dataset)
     ids, dialogs, domains = loader.load_dataset()
