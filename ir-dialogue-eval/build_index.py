@@ -5,9 +5,9 @@ from glob import glob
 from os import path
 
 from dataset_loaders.dataset_loader_factory import get_dataset_loader
-from dataset_importer import DatasetImporter
+from dialog_eval import DialogEval
 
-parser = argparse.ArgumentParser("Run analytics on Synced Entities in Elasticsearch")
+parser = argparse.ArgumentParser("Build Elasticsearch index for dialogue evaluation.")
 parser.add_argument("--logfile", default="build_index_log.txt", required=False, 
                     help="Path to the log file to write to. (default: %(default)s)")
 parser.add_argument("--loglevel", default="WARNING", required=False, 
@@ -35,10 +35,10 @@ logging.basicConfig(handlers = [file_handler, stdout_handler],
 print("Logging level set to {0}...".format(args.loglevel))
 print()
 
-#Initialize the importer, which internally initializes the elasticsearch index
+#Initialize the dialog evaluator, which internally initializes the elasticsearch index
 #and embedding models
-importer = DatasetImporter(args.elasticsearch_uri, args.elasticsearch_index,
-                           embedding_model=args.embedding_model)
+dialogeval = DialogEval(args.elasticsearch_uri, args.elasticsearch_index,
+                        embedding_model=args.embedding_model)
 
 #Import all datasets
 datasets_path = "datasets"
@@ -50,4 +50,4 @@ datasets = glob(glob_path)
 for dataset in datasets:
     loader = get_dataset_loader(dataset)
     ids, dialogs, domains = loader.load_dataset()
-    importer.import_dataset(loader.dataset_name, ids, dialogs, domains)
+    dialogeval.import_dataset(loader.dataset_name, ids, dialogs, domains)

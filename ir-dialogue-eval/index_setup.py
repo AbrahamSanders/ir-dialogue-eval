@@ -16,6 +16,15 @@ def verify_and_configure_index(es, index_name, embedding_dims):
         logging.info("Creating index '%s'..." % index_name)
         mappings = {
             "properties": {
+                "utterance_id": {
+                    "type": "text",
+                    "fields": {
+                        "keyword": {
+                            "type": "keyword",
+                            "ignore_above": 256
+                        }
+                    }
+                },
                 "context_embedding": {
                     "type": "dense_vector",
                     "dims": embedding_dims
@@ -25,15 +34,6 @@ def verify_and_configure_index(es, index_name, embedding_dims):
                     "dims": embedding_dims
                 },
                 "utterance": {
-                    "type": "text",
-                    "fields": {
-                        "keyword": {
-                            "type": "keyword",
-                            "ignore_above": 256
-                        }
-                    }
-                },
-                "speaker": {
                     "type": "text",
                     "fields": {
                         "keyword": {
@@ -64,6 +64,15 @@ def verify_and_configure_index(es, index_name, embedding_dims):
                     }
                 },
                 "source_dialog_id": {
+                    "type": "text",
+                    "fields": {
+                        "keyword": {
+                            "type": "keyword",
+                            "ignore_above": 256
+                        }
+                    }
+                },
+                "source_speaker": {
                     "type": "text",
                     "fields": {
                         "keyword": {
