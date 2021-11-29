@@ -16,7 +16,7 @@ parser.add_argument("--elasticsearch-uri", default="http://localhost:9200", requ
                     help="URI of elasticsearch server. (default: %(default)s)")
 parser.add_argument("--elasticsearch-index", default="dialog-eval", required=False,
                     help="Name of the elasticsearch index. (default: %(default)s)")
-parser.add_argument("--embedding-model", default="all-mpnet-base-v2", required=False,
+parser.add_argument("--embedding-model", default="all-MiniLM-L12-v2", required=False,
                     help="Name of the sentence-transformers embedding model. (default: %(default)s)")
 
 args = parser.parse_args()

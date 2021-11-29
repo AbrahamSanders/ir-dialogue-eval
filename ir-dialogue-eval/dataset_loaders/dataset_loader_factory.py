@@ -3,6 +3,7 @@ DatasetLoader factory
 """
 from os import path
 from dataset_loaders.frames_dataset_loader import FramesDatasetLoader
+from dataset_loaders.sgd_dataset_loader import SGDDatasetLoader
 
 def get_dataset_loader(dataset_path):
     """
@@ -23,5 +24,7 @@ def get_dataset_loader(dataset_path):
     
     if dataset_name == "frames":
         return FramesDatasetLoader(dataset_path)
+    if dataset_name == "dstc8-schema-guided-dialogue":
+        return SGDDatasetLoader(dataset_path)
         
     raise ValueError("There is no DatasetLoader implementation for '%s'. Please add one!" % dataset_name)

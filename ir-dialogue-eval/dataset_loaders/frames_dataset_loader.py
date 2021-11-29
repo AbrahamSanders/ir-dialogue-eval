@@ -37,9 +37,3 @@ class FramesDatasetLoader(DatasetLoader):
                 domains[-1].append(Domain.HOTELS.value)
 
         return ids, dialogs, domains
-    
-    def _normalize_whitespace(self, text):
-        text = re.sub(r"[\s]+", " ", text)
-        text = re.sub(r" +", " ", text)
-        text = text.strip()
-        return text

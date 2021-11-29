@@ -3,6 +3,7 @@ DatasetLoader class.
 """
 
 import abc
+import re
 from os import path
 
 class DatasetLoader(object):
@@ -57,4 +58,10 @@ class DatasetLoader(object):
                % filtered_dataset_specific)
             
         return ids, dialogs, domains
+    
+    def _normalize_whitespace(self, text):
+        text = re.sub(r"[\s]+", " ", text)
+        text = re.sub(r" +", " ", text)
+        text = text.strip()
+        return text
         

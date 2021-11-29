@@ -12,7 +12,7 @@ from index_setup import verify_and_configure_index
 class DialogEval(object):
     def __init__(self, elasticsearch_uri, elasticsearch_index_name="dialog-eval", 
                  elasticsearch_timeout_secs=60, elasticsearch_chunk_size=100, 
-                 embedding_model="all-mpnet-base-v2", normalize_embeddings=True,
+                 embedding_model="all-MiniLM-L12-v2", normalize_embeddings=True,
                  embed_batch_size=32, process_batch_size=128, show_progress=True):
         
         #Initialize elasticsearch settings

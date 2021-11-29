@@ -9,8 +9,8 @@ def verify_and_configure_index(es, index_name, embedding_dims):
 
         if embedding_dims != index_embedding_dims:
             raise ValueError("Dims of the specified embedding model (%d) do not match the dims of "
-                             "the 'context_embedding' and 'utterance_embedding' fields (%d) "
-                             "in index '%s'." 
+                             "the 'context_embedding', 'prior_utterance_embedding' and 'utterance_embedding' "
+                             "fields (%d) in index '%s'." 
                              % (embedding_dims, index_embedding_dims, index_name))     
     else:
         logging.info("Creating index '%s'..." % index_name)
