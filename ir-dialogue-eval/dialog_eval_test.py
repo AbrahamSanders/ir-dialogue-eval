@@ -20,19 +20,17 @@ print()
 dialogeval = DialogEval(args.elasticsearch_uri, args.elasticsearch_index,
                         embedding_model=args.embedding_model)
 
-contexts = [
+utterances_in_context = [
     ["Hello there! I have 12 days off starting on August 22, and I'm leaving from Santo Domingo",
      "Do you have a budget?",
      "Not a strict budget",
-     "Are you travelling with anyone?"
-     ]
+     "When would you like to leave?",
+     "Next week."]
 ]
 
-utterances = [
-    "3 people."
-]
+reference_utterances = []
 
-scores = dialogeval.score_utterances(contexts, utterances)
+scores = dialogeval.score_utterances(utterances_in_context, reference_utterances)
 
 print()
 print()

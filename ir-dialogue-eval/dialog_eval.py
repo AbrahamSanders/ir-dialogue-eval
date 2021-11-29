@@ -33,54 +33,6 @@ class DialogEval(object):
         self.process_batch_size = process_batch_size
         self.show_progress = show_progress
     
-    def score_utterances(self, contexts, utterances, reference_utterances=None, domains=None, 
-                         source_datasets=None, source_speakers=None, max_samples=30):
-        scores = []
-        n_samples = max_samples if reference_utterances is None else max_samples-1
-        for i in trange(len(utterances), desc="Utterances", disable=not self.show_progress):
-            #Embed everything
-            pooled_context_embedding = None
-            if contexts[i]:
-                context_embeddings = self.embedding_model.encode(contexts[i], batch_size=self.embed_batch_size, 
-                                                                 normalize_embeddings=self.normalize_embeddings, 
-                                                                 show_progress_bar=False)
-                pooled_context_embedding = np.mean(context_embeddings, axis=0)
-            
-            utterance_embedding = self.embedding_model.encode(utterances[i], 
-                                                              normalize_embeddings=self.normalize_embeddings, 
-                                                              show_progress_bar=False)
-            
-            if reference_utterances is not None:
-                ref_utterance_embedding = self.embedding_model.encode(reference_utterances[i], 
-                                                                      normalize_embeddings=self.normalize_embeddings, 
-                                                                      show_progress_bar=False)
-                
-            #Get nearest neighbor contexts from Elasticsearch
-            scoring_query = self._get_scoring_query(pooled_context_embedding, domains, source_datasets, source_speakers)
-            results = self.es.search(scoring_query, self.es_index_name, size=n_samples)
-            results = [{"_score": hit["_score"], **hit["_source"]} for hit in results["hits"]["hits"]]
-            
-            if contexts[i]:
-                context_cosines = np.array([r["_score"] for r in results])-1.0 # undo +1.0 in ES script score
-            else:
-                context_cosines = np.ones(len(results), dtype=np.float64)
-            nearest_utterances = [r["utterance"] for r in results]
-            nearest_utterance_embeddings = np.vstack([r["utterance_embedding"] for r in results]).astype(np.float32)
-            
-            if reference_utterances is not None:
-                context_cosines = np.concatenate((context_cosines, [1.0]))
-                nearest_utterances.append(reference_utterances[i])
-                nearest_utterance_embeddings = np.vstack((nearest_utterance_embeddings, ref_utterance_embedding))
-                
-            #Compute average utterance similarity weighted by context similarity
-            utterance_cosines = 1 - np.squeeze(cdist(nearest_utterance_embeddings, 
-                                                     np.expand_dims(utterance_embedding, 0), 
-                                                     metric="cosine"), axis=1)
-            score = np.average(utterance_cosines, weights=context_cosines)
-            scores.append(score)
-        
-        return np.array(scores)
-                
     def import_dataset(self, dataset_name, ids, dialogs, domains):
         n_batches = math.ceil(len(ids) / self.process_batch_size)
         for i in trange(n_batches, desc="Dialog Batches (%s)" % dataset_name, disable=not self.show_progress):
@@ -116,7 +68,9 @@ class DialogEval(object):
                         "source_speaker": dialog[k][0]
                     }
                     if k > 0:
-                        source["context_embedding"] = np.mean(dialog_embeddings[:k], axis=0).tolist()
+                        source["prior_utterance_embedding"] = dialog_embeddings[k-1].tolist()
+                    if k > 1:
+                        source["context_embedding"] = np.mean(dialog_embeddings[:(k-1)], axis=0).tolist()
                         
                     action = {
                         "_op_type": "index",
@@ -126,13 +80,69 @@ class DialogEval(object):
                     es_docs.append(action)
                     
             bulk(self.es, es_docs, index=self.es_index_name, chunk_size=self.es_chunk_size)
+    
+    def score_utterances(self, utterances_in_context, reference_utterances=None, domains=None, 
+                         source_datasets=None, source_speakers=None, max_samples=30, context_weight=0.5):
+        
+        self._validate_score_params(utterances_in_context, reference_utterances, domains, 
+                                    source_datasets, source_speakers)
+        
+        scores = []
+        n_samples = max_samples-1 if reference_utterances else max_samples
+        for i in trange(len(utterances_in_context), desc="Utterances", disable=not self.show_progress):
+            utt_in_context = utterances_in_context[i]
             
-    def _get_scoring_query(self, context_embedding, domains, source_datasets, source_speakers):
+            #Embed everything
+            embeddings = self.embedding_model.encode(utt_in_context, batch_size=self.embed_batch_size, 
+                                                     normalize_embeddings=self.normalize_embeddings, 
+                                                     show_progress_bar=False)
+            
+            utterance_embedding = embeddings[-1]
+            prior_utterance_embedding = embeddings[-2] if len(utt_in_context) > 1 else None
+            context_embedding = np.mean(embeddings[:-2], axis=0) if len(utt_in_context) > 2 else None
+            
+            if reference_utterances:
+                ref_utterance_embedding = self.embedding_model.encode(reference_utterances[i], 
+                                                                      normalize_embeddings=self.normalize_embeddings, 
+                                                                      show_progress_bar=False)
+                
+            #Get nearest neighbor contexts from Elasticsearch
+            scoring_query = self._get_scoring_query(context_embedding, prior_utterance_embedding, domains, 
+                                                    source_datasets, source_speakers, context_weight)
+            results = self.es.search(scoring_query, self.es_index_name, size=n_samples)
+            results = [{"_score": hit["_score"], **hit["_source"]} for hit in results["hits"]["hits"]]
+            
+            if len(utt_in_context) > 1:
+                context_cosines = np.array([r["_score"] for r in results])-1.0 # undo +1.0 in ES script score
+            else:
+                context_cosines = np.ones(len(results), dtype=np.float64)
+            nearest_utterances = [r["utterance"] for r in results]
+            nearest_utterance_embeddings = np.vstack([r["utterance_embedding"] for r in results]).astype(np.float32)
+            
+            if reference_utterances:
+                context_cosines = np.concatenate((context_cosines, [1.0]))
+                nearest_utterances.append(reference_utterances[i])
+                nearest_utterance_embeddings = np.vstack((nearest_utterance_embeddings, ref_utterance_embedding))
+                
+            #Compute max utterance similarity weighted by context similarity
+            shifted_context_cosines = context_cosines + (1-np.max(context_cosines))
+            utterance_cosines = 1 - np.squeeze(cdist(nearest_utterance_embeddings, 
+                                                     np.expand_dims(utterance_embedding, 0), 
+                                                     metric="cosine"), axis=1)
+            weighted_cosines = utterance_cosines * shifted_context_cosines
+            
+            score = np.max(weighted_cosines)
+            scores.append(score)
+        
+        return np.array(scores)
+    
+    def _get_scoring_query(self, context_embedding, prior_utterance_embedding, domains, 
+                           source_datasets, source_speakers, context_weight):
         filter_clause = []
-        if context_embedding is not None:
+        if prior_utterance_embedding is not None:
             filter_clause.append({
                 "exists": {
-                  "field": "context_embedding"
+                  "field": "prior_utterance_embedding"
                 }
             })
         else:
@@ -141,27 +151,43 @@ class DialogEval(object):
                     "seq_num": 1
                 }
             })
-        if domains is not None:
+        if context_embedding is not None:
+            filter_clause.append({
+                "exists": {
+                  "field": "context_embedding"
+                }
+            })
+        if domains:
             filter_clause.append({
                 "terms": {
                     "domains": domains
                 }
             })
-        if source_datasets is not None:
+        if source_datasets:
             filter_clause.append({
                 "terms": {
                     "source_dataset": source_datasets
                 }
             })
-        if source_speakers is not None:
+        if source_speakers:
             filter_clause.append({
                 "terms": {
                     "source_speaker": source_speakers
                 }
             })
         
-        if context_embedding is not None:
+        if prior_utterance_embedding is not None:
             score_func = "dotProduct" if self.normalize_embeddings else "cosineSimilarity"
+            if context_embedding is not None and context_weight > 0:
+                script_source = ("(({0} * {2}(params.context_embedding, 'context_embedding')) +"
+                                 " ({1} * {2}(params.prior_utterance_embedding, 'prior_utterance_embedding'))) + 1.0")
+                script_source = script_source.format(context_weight, 1-context_weight, score_func)
+                script_params = {"context_embedding": context_embedding.tolist(), 
+                                 "prior_utterance_embedding": prior_utterance_embedding.tolist()}
+            else:
+                script_source = "%s(params.prior_utterance_embedding, 'prior_utterance_embedding') + 1.0" % score_func
+                script_params = {"prior_utterance_embedding": prior_utterance_embedding.tolist()}
+                
             query = {
                 "script_score": {
                     "query": {
@@ -170,8 +196,8 @@ class DialogEval(object):
                         }
                     },
                     "script": {
-                        "source": "%s(params.query_vector, 'context_embedding') + 1.0" % score_func,
-                        "params": {"query_vector": context_embedding.tolist()}
+                        "source": script_source,
+                        "params": script_params
                     }
                 }
             }
@@ -197,3 +223,17 @@ class DialogEval(object):
         }
           
         return query
+    
+    def _validate_score_params(self, utterances_in_context, reference_utterances, domains, 
+                               source_datasets, source_speakers):
+        if reference_utterances and len(reference_utterances) != len(utterances_in_context):
+            raise ValueError("If provided, reference_utterances must be the same length as utterances_in_context.")
+                
+        if domains and len(domains) != len(utterances_in_context):
+            raise ValueError("If provided, domains must be the same length as utterances_in_context.")
+            
+        if source_datasets and len(source_datasets) != len(utterances_in_context):
+            raise ValueError("If provided, source_datasets must be the same length as utterances_in_context.")
+            
+        if source_speakers and len(source_speakers) != len(utterances_in_context):
+            raise ValueError("If provided, source_speakers must be the same length as utterances_in_context.")

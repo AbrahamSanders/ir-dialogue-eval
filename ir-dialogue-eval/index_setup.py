@@ -29,6 +29,10 @@ def verify_and_configure_index(es, index_name, embedding_dims):
                     "type": "dense_vector",
                     "dims": embedding_dims
                 },
+                "prior_utterance_embedding": {
+                    "type": "dense_vector",
+                    "dims": embedding_dims
+                },
                 "utterance_embedding": {
                     "type": "dense_vector",
                     "dims": embedding_dims
