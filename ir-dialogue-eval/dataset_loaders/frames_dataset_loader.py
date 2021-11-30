@@ -19,7 +19,7 @@ class FramesDatasetLoader(DatasetLoader):
         """
         # Import the dialogs from the dataset
         frames_filepath = path.join(self.dataset_path, "frames.json")
-        with open(frames_filepath) as f:
+        with open(frames_filepath, encoding="utf-8") as f:
             frames_json = json.load(f)
 
         ids = [dialog["id"] for dialog in frames_json]

@@ -25,7 +25,7 @@ class SGDDatasetLoader(DatasetLoader):
             sgd_filepaths = glob(glob_path)
             
             for sgd_filepath in sgd_filepaths:
-                with open(sgd_filepath) as f:
+                with open(sgd_filepath, encoding="utf-8") as f:
                     sgd_json = json.load(f)
                 
                 ids.extend(["%s_%s" % (sub_dir, dialog["dialogue_id"]) for dialog in sgd_json])

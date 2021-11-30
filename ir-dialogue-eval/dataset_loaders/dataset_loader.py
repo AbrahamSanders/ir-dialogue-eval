@@ -9,7 +9,7 @@ from os import path
 class DatasetLoader(object):
     def __init__(self, dataset_path):
         self.dataset_path = dataset_path
-        self.dataset_name = path.basename(dataset_path)
+        self.dataset_name = path.basename(dataset_path).lower()
     
     @abc.abstractmethod
     def _load_dataset(self):
