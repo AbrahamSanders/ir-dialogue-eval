@@ -82,7 +82,7 @@ class DialogEval(object):
             bulk(self.es, es_docs, index=self.es_index_name, chunk_size=self.es_chunk_size)
     
     def score_utterances(self, utterances_in_context, reference_utterances=None, domains=None, 
-                         source_datasets=None, source_speakers=None, max_samples=30, context_weight=0.5):
+                         source_datasets=None, source_speakers=None, max_samples=100, context_weight=0.5):
         
         self._validate_score_params(utterances_in_context, reference_utterances, domains, 
                                     source_datasets, source_speakers)

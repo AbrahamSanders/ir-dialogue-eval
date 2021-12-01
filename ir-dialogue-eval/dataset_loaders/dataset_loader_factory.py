@@ -6,6 +6,7 @@ from dataset_loaders.frames_dataset_loader import FramesDatasetLoader
 from dataset_loaders.sgd_dataset_loader import SGDDatasetLoader
 from dataset_loaders.multiwoz_dataset_loader import MultiWOZDatasetLoader
 from dataset_loaders.dailydialog_dataset_loader import DailyDialogDatasetLoader
+from dataset_loaders.cornell_dataset_loader import CornellMovieDialogsDatasetLoader
 
 def get_dataset_loader(dataset_path):
     """
@@ -32,5 +33,7 @@ def get_dataset_loader(dataset_path):
         return MultiWOZDatasetLoader(dataset_path)
     if dataset_name == "ijcnlp_dailydialog":
         return DailyDialogDatasetLoader(dataset_path)
+    if dataset_name == "cornell movie-dialogs corpus":
+        return CornellMovieDialogsDatasetLoader(dataset_path)
     
     raise ValueError("There is no DatasetLoader implementation for '%s'. Please add one!" % dataset_name)
