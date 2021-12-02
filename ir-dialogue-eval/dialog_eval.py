@@ -82,18 +82,24 @@ class DialogEval(object):
             bulk(self.es, es_docs, index=self.es_index_name, chunk_size=self.es_chunk_size)
     
     def score_utterances(self, utterances_in_context, reference_utterances=None, domains=None, 
-                         source_datasets=None, source_speakers=None, max_samples=100, context_weight=0.5):
+                         source_datasets=None, source_speakers=None, n_samples=50, context_weight=0.5):
         
         self._validate_score_params(utterances_in_context, reference_utterances, domains, 
-                                    source_datasets, source_speakers)
+                                    source_datasets, source_speakers, n_samples)
         
         scores = []
-        n_samples = max_samples-1 if reference_utterances else max_samples
         for i in trange(len(utterances_in_context), desc="Utterances", disable=not self.show_progress):
             utt_in_context = utterances_in_context[i]
+            if isinstance(utt_in_context, str):
+                utt_in_context = [utt_in_context]
+                
+            ref_utterances = reference_utterances[i] if reference_utterances else None
+            if isinstance(ref_utterances, str) and ref_utterances != "":
+                ref_utterances = [ref_utterances]
             
             #Embed everything
-            embeddings = self.embedding_model.encode(utt_in_context, batch_size=self.embed_batch_size, 
+            embeddings = self.embedding_model.encode(utt_in_context, 
+                                                     batch_size=self.embed_batch_size, 
                                                      normalize_embeddings=self.normalize_embeddings, 
                                                      show_progress_bar=False)
             
@@ -101,28 +107,35 @@ class DialogEval(object):
             prior_utterance_embedding = embeddings[-2] if len(utt_in_context) > 1 else None
             context_embedding = np.mean(embeddings[:-2], axis=0) if len(utt_in_context) > 2 else None
             
-            if reference_utterances:
-                ref_utterance_embedding = self.embedding_model.encode(reference_utterances[i], 
-                                                                      normalize_embeddings=self.normalize_embeddings, 
-                                                                      show_progress_bar=False)
+            if ref_utterances:
+                ref_utterance_embeddings = self.embedding_model.encode(ref_utterances,
+                                                                       batch_size=self.embed_batch_size,
+                                                                       normalize_embeddings=self.normalize_embeddings, 
+                                                                       show_progress_bar=False)
+            
+            if n_samples > 0:
+                #Get nearest neighbor contexts from Elasticsearch
+                scoring_query = self._get_scoring_query(context_embedding, prior_utterance_embedding, domains, 
+                                                        source_datasets, source_speakers, context_weight)
+                results = self.es.search(scoring_query, self.es_index_name, size=n_samples)
+                results = [{"_score": hit["_score"], **hit["_source"]} for hit in results["hits"]["hits"]]
                 
-            #Get nearest neighbor contexts from Elasticsearch
-            scoring_query = self._get_scoring_query(context_embedding, prior_utterance_embedding, domains, 
-                                                    source_datasets, source_speakers, context_weight)
-            results = self.es.search(scoring_query, self.es_index_name, size=n_samples)
-            results = [{"_score": hit["_score"], **hit["_source"]} for hit in results["hits"]["hits"]]
+                if len(utt_in_context) > 1:
+                    context_cosines = np.array([r["_score"] for r in results])-1.0 # undo +1.0 in ES script score
+                else:
+                    context_cosines = np.ones(len(results))
+                nearest_utterances = [r["utterance"] for r in results]
+                nearest_utterance_embeddings = np.vstack([r["utterance_embedding"] for r in results]).astype(np.float32)
             
-            if len(utt_in_context) > 1:
-                context_cosines = np.array([r["_score"] for r in results])-1.0 # undo +1.0 in ES script score
+                if ref_utterances:
+                    context_cosines = np.concatenate((context_cosines, np.ones(len(ref_utterances))))
+                    nearest_utterances.extend(ref_utterances)
+                    nearest_utterance_embeddings = np.vstack((nearest_utterance_embeddings, ref_utterance_embeddings))   
             else:
-                context_cosines = np.ones(len(results), dtype=np.float64)
-            nearest_utterances = [r["utterance"] for r in results]
-            nearest_utterance_embeddings = np.vstack([r["utterance_embedding"] for r in results]).astype(np.float32)
-            
-            if reference_utterances:
-                context_cosines = np.concatenate((context_cosines, [1.0]))
-                nearest_utterances.append(reference_utterances[i])
-                nearest_utterance_embeddings = np.vstack((nearest_utterance_embeddings, ref_utterance_embedding))
+                #If n_samples == 0, ref_utterances and ref_utterance_embeddings are guaranteed (by validation) to exist.
+                context_cosines = np.ones(len(ref_utterances))
+                nearest_utterances = ref_utterances
+                nearest_utterance_embeddings = ref_utterance_embeddings
                 
             #Compute max utterance similarity weighted by context similarity
             shifted_context_cosines = context_cosines + (1-np.max(context_cosines))
@@ -225,10 +238,16 @@ class DialogEval(object):
         return query
     
     def _validate_score_params(self, utterances_in_context, reference_utterances, domains, 
-                               source_datasets, source_speakers):
+                               source_datasets, source_speakers, n_samples):
+        if len(utterances_in_context) == 0:
+            raise ValueError("utterances_in_context must contain at least one item.")
+        
         if reference_utterances and len(reference_utterances) != len(utterances_in_context):
             raise ValueError("If provided, reference_utterances must be the same length as utterances_in_context.")
-                
+        
+        if n_samples == 0 and (not reference_utterances or any(not r for r in reference_utterances)):
+            raise ValueError("If n_samples == 0, at least one reference utterance must be provided for each test utterance.")
+        
         if domains and len(domains) != len(utterances_in_context):
             raise ValueError("If provided, domains must be the same length as utterances_in_context.")
             
