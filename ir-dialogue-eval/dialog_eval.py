@@ -82,12 +82,13 @@ class DialogEval(object):
             bulk(self.es, es_docs, index=self.es_index_name, chunk_size=self.es_chunk_size)
     
     def score_utterances(self, utterances_in_context, reference_utterances=None, domains=None, 
-                         source_datasets=None, source_speakers=None, n_samples=50, context_weight=0.5):
+                         source_datasets=None, source_speakers=None, n_samples=50, context_weight=0.5,
+                         return_details=False):
         
-        self._validate_score_params(utterances_in_context, reference_utterances, domains, 
-                                    source_datasets, source_speakers, n_samples)
+        self._validate_score_params(utterances_in_context, reference_utterances, n_samples)
         
         scores = []
+        details = []
         for i in trange(len(utterances_in_context), desc="Utterances", disable=not self.show_progress):
             utt_in_context = utterances_in_context[i]
             if isinstance(utt_in_context, str):
@@ -146,8 +147,20 @@ class DialogEval(object):
             
             score = np.max(weighted_cosines)
             scores.append(score)
+            
+            if return_details:
+                details.append({
+                    "context_cosines": context_cosines,
+                    "shifted_context_cosines": shifted_context_cosines,
+                    "nearest_utterances": nearest_utterances,
+                    "utterance_cosines": utterance_cosines,
+                    "weighted_cosines": weighted_cosines
+                })
         
-        return np.array(scores)
+        if return_details:
+            return np.array(scores), details
+        else:
+            return np.array(scores)
     
     def _get_scoring_query(self, context_embedding, prior_utterance_embedding, domains, 
                            source_datasets, source_speakers, context_weight):
@@ -172,20 +185,20 @@ class DialogEval(object):
             })
         if domains:
             filter_clause.append({
-                "terms": {
-                    "domains": domains
+                "match": {
+                    "domains": ",".join(domains)
                 }
             })
         if source_datasets:
             filter_clause.append({
-                "terms": {
-                    "source_dataset": source_datasets
+                "match": {
+                    "source_dataset": ",".join(source_datasets)
                 }
             })
         if source_speakers:
             filter_clause.append({
-                "terms": {
-                    "source_speaker": source_speakers
+                "match": {
+                    "source_speaker": ",".join(source_speakers)
                 }
             })
         
@@ -237,8 +250,7 @@ class DialogEval(object):
           
         return query
     
-    def _validate_score_params(self, utterances_in_context, reference_utterances, domains, 
-                               source_datasets, source_speakers, n_samples):
+    def _validate_score_params(self, utterances_in_context, reference_utterances, n_samples):
         if len(utterances_in_context) == 0:
             raise ValueError("utterances_in_context must contain at least one item.")
         
@@ -247,12 +259,3 @@ class DialogEval(object):
         
         if n_samples == 0 and (not reference_utterances or any(not r for r in reference_utterances)):
             raise ValueError("If n_samples == 0, at least one reference utterance must be provided for each test utterance.")
-        
-        if domains and len(domains) != len(utterances_in_context):
-            raise ValueError("If provided, domains must be the same length as utterances_in_context.")
-            
-        if source_datasets and len(source_datasets) != len(utterances_in_context):
-            raise ValueError("If provided, source_datasets must be the same length as utterances_in_context.")
-            
-        if source_speakers and len(source_speakers) != len(utterances_in_context):
-            raise ValueError("If provided, source_speakers must be the same length as utterances_in_context.")
